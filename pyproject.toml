@@ -3,6 +3,21 @@ requires = ["setuptools >= 80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fake-news"
+name = "fake-news-classifier"
 version = "0.1.0"
-dependencies = []
+dependencies = [
+    "nltk>=3.9.2,<4",
+    "numpy>=2.4.0,<3",
+    "pandas>=2.3.3,<3",
+    "pycld2>=0.42,<1",
+    "spacy>=3.8.11,<4"
+]
+
+[project.optional-dependencies]
+data = [
+    "kagglehub>=0.3.13,<1"
+]
+notebooks = [
+    "ipykernel>=7.1.0,<8",
+    "matplotlib>=3.10.8,<4"
+]

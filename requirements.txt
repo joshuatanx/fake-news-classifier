@@ -1,0 +1,1 @@
+-e git+https://github.com/joshuatanx/fake-news-classifier.git@42a15dc008a21ec11947449966d53f70c885d3fd#egg=fake_news_classifier
