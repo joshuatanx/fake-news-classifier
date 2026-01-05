@@ -1,0 +1,210 @@
+import pandas as pd
+import pycld2 as cld2
+import re
+from .schema import validate_raw_dataframe, LABEL_COL, TITLE_COL, TEXT_COL
+
+def drop_invalid_label_rows(df: pd.DataFrame):
+    """Drop rows with labels that are not `0` or `1`."""
+    df = df.copy()
+    
+    invalid_mask = df[LABEL_COL].apply(lambda label: label not in [0, 1])
+    
+    if invalid_mask.any():
+        invalid_indices = df.index[invalid_mask].tolist()
+        df.drop(index = invalid_indices, inplace = True)
+    
+    return df
+
+def replace_whitespace_entries(df: pd.DataFrame):
+    """Replace entries consisting of solely whitespace with `pd.NA`."""
+    df = df.copy()
+    
+    df.replace(r"^\s*$", pd.NA, regex = True, inplace = True)
+    
+    return df
+
+def drop_missing_text_rows(df: pd.DataFrame):
+    """Drop rows missing text."""
+    df = df.copy()
+    
+    df.dropna(subset = [TEXT_COL], inplace = True)
+
+    return df
+
+def remove_ansi_codes(text: str):
+    """Replace ANSI escape codes with whitespace."""
+    return re.sub(r"\x1B(?:[@-Z\\-_]|[78]|\[[0-?]*[ -/]*[@-~])", " ", text)
+
+def remove_control_codes(text: str):
+    """Replace spacing codes with whitespace and remove the other C0 control codes, DEL, C1 control codes, BOM, and zero-width characters."""
+    translation_map = {}
+    
+    # Spacing codes
+    whitespace_codes = [
+        0x09,   # Tab
+        0x0A,   # Newline
+        0x0D,   # Carriage
+        0x0B,   # Vertical tab
+        0x0C    # Form feed
+    ]
+    for code in whitespace_codes:
+        translation_map[code] = 0x20    # Space
+    
+    # C0 controls excluding whitespace codes
+    for code in range(0x00, 0x20):
+        if code not in whitespace_codes:
+            translation_map[code] = None
+    
+    # DEL
+    translation_map[0x7F] = None
+
+    # C1 controls (which can result from poor decoding)
+    for code in range(0x80, 0xA0):
+        translation_map[code] = None
+
+    # BOM + zero-width chars
+    for code in (0xFEFF, 0x200B, 0x200C, 0x200D, 0x200E, 0x200F):
+        translation_map[code] = None
+    
+    return text.translate(translation_map)
+
+def fix_missing_spaces_around_punctuation(text: str):
+    """Fix missing spaces before/after punctuation."""
+    URL_RE = re.compile(r"https?://\S+|www\.\S+")
+    EMAIL_RE = re.compile(r"\b[\w\.-]+@[\w\.-]+\.\w+\b")
+
+    # Protect URLs and emails
+    protected = []
+    def _protect(match):
+        protected.append(match.group(0))
+        return f"__PROTECTED_{len(protected) - 1}__"
+
+    text = URL_RE.sub(_protect, text)
+    text = EMAIL_RE.sub(_protect, text)
+
+    # Split after acronym chains, e.g. U.S.President -> U.S. President
+    text = re.sub(
+        r"((?:\b[A-Z]\.){2,})([A-Z][a-z])",
+        r"\1 \2",
+        text
+    )
+    
+    # Fix missing space before `(`, `[`, and `{` when preceeded by an alphanumeric value
+    text = re.sub(r"(?<=[A-Za-z0-9])(?=[([{])", " ", text)
+
+    # Fix missing space after ')', ']', and '}', e.g. (Reuters)WASHINGTON -> (Reuters) WASHINGTON
+    text = re.sub(
+        r"([\)\]\}])(?=[A-Za-z])",
+        r"\1 ",
+        text
+    )
+
+    # Fix missing space after '.', '!', and '?' when the next sentence starts with a capital, `(`, `[`, or `{`
+    text = re.sub(
+        r"([.!?])(?![A-Z]\.)(?=[A-Z([{])",
+        r"\1 ",
+        text
+    )
+
+    # Restore protected spans
+    for i, span in enumerate(protected):
+        text = text.replace(f"__PROTECTED_{i}__", span)
+
+    return text
+
+def normalize_whitespace(text: str):
+    """Remove repeated whitespace."""
+    return re.sub(r"\s+", " ", text).strip()
+
+def canonicalize_text_entries(df: pd.DataFrame):
+    """Remove any invalid characters and fix whitespace."""
+    df = df.copy()
+    
+    text_columns = [TEXT_COL]
+    if TITLE_COL in df.columns:
+        text_columns += [TITLE_COL]
+    
+    for column in text_columns:
+        df[column] = df[column].apply(
+            remove_ansi_codes
+        ).apply(
+            remove_control_codes
+        ).apply(
+            fix_missing_spaces_around_punctuation
+        ).apply(
+            normalize_whitespace
+        )
+    
+    return df
+
+def drop_nonenglish_rows(df: pd.DataFrame):
+    """Drop rows whose text is not in English."""
+    def is_nonenglish(text):
+        """Return whether the text is reliably detected to be non-English."""
+        result = cld2.detect(str(text))
+        
+        if result[0] == False:
+            return False
+        
+        return result[2][0][1] != "en"
+    
+    df = df.copy()
+    
+    text_columns = [TEXT_COL, TITLE_COL] if TITLE_COL in df.columns else [TEXT_COL]
+    
+    for column in text_columns:
+        df.drop(df[df[column].apply(is_nonenglish)].index, inplace = True)
+    
+    return df
+
+def drop_duplicate_rows(df: pd.DataFrame, match_title: bool = False):
+    """Drop duplicate rows. If `match_title` is `True`, only additional rows with both matching text and title are dropped. Otherwise, all additional rows with just matching text are dropped.
+    
+    Args:
+        df: The DataFrame to remove duplicate rows from.
+        match_title: If `False`, all additional rows with matching text are removed.
+    """
+    df = df.copy()
+    
+    if match_title:
+        df.drop_duplicates(subset = [TITLE_COL, TEXT_COL], inplace = True)
+    else:
+        df.drop_duplicates(subset = [TEXT_COL], inplace = True)
+        
+    return df
+
+def reindex_rows(df: pd.DataFrame):
+    """Reindex the rows of a DataFrame."""
+    df = df.copy()
+    
+    df.index = range(len(df))
+    
+    return df
+
+def clean_raw_dataframe(
+    df: pd.DataFrame,
+    match_title_for_duplicates: bool = False,
+    drop_nonenglish: bool = True,
+    reindex: bool = True
+):
+    """Apply the full cleaning pipeline to a raw DataFrame."""
+    validate_raw_dataframe(df)
+    df = df.copy()
+    
+    df = drop_invalid_label_rows(df)
+    df = replace_whitespace_entries(df)
+    df = drop_missing_text_rows(df)
+    
+    df = canonicalize_text_entries(df)
+    df = replace_whitespace_entries(df)
+    df = drop_missing_text_rows(df)
+    
+    if drop_nonenglish:
+        df = drop_nonenglish_rows(df)
+    
+    df = drop_duplicate_rows(df, match_title_for_duplicates)
+    
+    if reindex:
+        df = reindex_rows(df)
+    
+    return df

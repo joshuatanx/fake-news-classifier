@@ -21,3 +21,6 @@ notebooks = [
     "ipykernel>=7.1.0,<8",
     "matplotlib>=3.10.8,<4"
 ]
+test = [
+    "pytest>=9.0.2,<10"
+]
