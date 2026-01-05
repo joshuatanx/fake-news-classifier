@@ -1,13 +1,17 @@
 import pandas as pd
 import pytest
+from pandas.testing import assert_frame_equal
 
 from fake_news.data.clean import (
     canonicalize_text_entries,
+    cast_text_columns_to_string,
     clean_raw_dataframe,
     drop_duplicate_rows,
     drop_invalid_label_rows,
     drop_missing_text_rows,
+    drop_nonalphabetical_rows,
     drop_nonenglish_rows,
+    fill_na_with_empty_strings,
     fix_missing_spaces_around_punctuation,
     normalize_whitespace,
     reindex_rows,
@@ -20,6 +24,70 @@ from fake_news.data.schema import (
     TEXT_COL,
     TITLE_COL
 )
+
+# cast_text_columns_to_string
+@pytest.mark.parametrize(
+    "df, expected",
+    [(
+        pd.DataFrame({
+            TITLE_COL: ["Title"],
+            TEXT_COL: ["Text"],
+            LABEL_COL: [0]
+        }),
+        pd.DataFrame({
+            TITLE_COL: pd.Series(["Title"]),
+            TEXT_COL: pd.Series(["Text"]),
+            LABEL_COL: [0]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: pd.Series([1], dtype = "int8"),
+            TEXT_COL: pd.Series([True], dtype = "bool"),
+            LABEL_COL: [0]
+        }),
+        pd.DataFrame({
+            TITLE_COL: pd.Series(["1"]),
+            TEXT_COL: pd.Series(["True"]),
+            LABEL_COL: [0]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: [1, "Title"],
+            TEXT_COL: ["text", True],
+            LABEL_COL: [0, 1]
+        }),
+        pd.DataFrame({
+            TITLE_COL: pd.Series(["1", "Title"]),
+            TEXT_COL: pd.Series(["text", "True"]),
+            LABEL_COL: [0, 1]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: [1, None],
+            TEXT_COL: ["text", True],
+            LABEL_COL: [0, 1]
+        }),
+        pd.DataFrame({
+            TITLE_COL: pd.Series(["1", pd.NA]),
+            TEXT_COL: pd.Series(["text", "True"]),
+            LABEL_COL: [0, 1]
+        })
+    )]
+)
+def test_cast_text_columns_to_string(df, expected):
+    assert_frame_equal(cast_text_columns_to_string(df), expected)
+
+def test_cast_text_columns_to_string_does_not_mutate():
+    df = pd.DataFrame({
+        TITLE_COL: [1, None],
+        TEXT_COL: ["text", True],
+        LABEL_COL: [0, 1]
+    })
+    original = df.copy()
+    
+    cast_text_columns_to_string(df)
+    
+    assert_frame_equal(df, original)
 
 # drop_invalid_label_rows
 @pytest.mark.parametrize(
@@ -63,7 +131,7 @@ from fake_news.data.schema import (
     )]
 )
 def test_drop_invalid_label_rows(df, expected):
-    pd.testing.assert_frame_equal(drop_invalid_label_rows(df), expected)
+    assert_frame_equal(drop_invalid_label_rows(df), expected)
 
 def test_drop_invalid_label_rows_does_not_mutate():
     df = pd.DataFrame({
@@ -74,7 +142,7 @@ def test_drop_invalid_label_rows_does_not_mutate():
     
     drop_invalid_label_rows(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
 
 # replace_whitespace_entries
 @pytest.mark.parametrize(
@@ -115,7 +183,7 @@ def test_drop_invalid_label_rows_does_not_mutate():
     )]
 )
 def test_replace_whitespace_entries(df, expected):
-    pd.testing.assert_frame_equal(replace_whitespace_entries(df), expected)
+    assert_frame_equal(replace_whitespace_entries(df), expected)
 
 def test_replace_whitespace_entries_does_not_mutate():
     df = pd.DataFrame({
@@ -127,7 +195,7 @@ def test_replace_whitespace_entries_does_not_mutate():
     
     replace_whitespace_entries(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
 
 # drop_missing_text_rows
 @pytest.mark.parametrize(
@@ -168,7 +236,7 @@ def test_replace_whitespace_entries_does_not_mutate():
     )]
 )
 def test_drop_missing_text_rows(df, expected):
-    pd.testing.assert_frame_equal(drop_missing_text_rows(df), expected)
+    assert_frame_equal(drop_missing_text_rows(df), expected)
 
 def test_drop_missing_text_rows_does_not_mutate():
     df = pd.DataFrame({
@@ -180,7 +248,49 @@ def test_drop_missing_text_rows_does_not_mutate():
     
     drop_missing_text_rows(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
+
+# fill_na_with_empty_strings
+@pytest.mark.parametrize(
+    "df, expected",
+    [(
+        pd.DataFrame({
+            TITLE_COL: ["Title"],
+            TEXT_COL: ["Text"],
+            LABEL_COL: [0]
+        }),
+        pd.DataFrame({
+            TITLE_COL: ["Title"],
+            TEXT_COL: ["Text"],
+            LABEL_COL: [0]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: [pd.NA],
+            TEXT_COL: [None],
+            LABEL_COL: [0]
+        }),
+        pd.DataFrame({
+            TITLE_COL: [""],
+            TEXT_COL: [""],
+            LABEL_COL: [0]
+        })
+    )]
+)
+def test_fill_na_with_empty_strings(df, expected):
+    assert_frame_equal(fill_na_with_empty_strings(df), expected)
+
+def test_fill_na_with_empty_strings_does_not_mutate():
+    df = pd.DataFrame({
+        TITLE_COL: [pd.NA],
+        TEXT_COL: [None],
+        LABEL_COL: [0]
+    })
+    original = df.copy()
+    
+    fill_na_with_empty_strings(df)
+    
+    assert_frame_equal(df, original)
 
 # remove_ansi_codes
 @pytest.mark.parametrize(
@@ -328,7 +438,7 @@ def test_normalize_whitespace(text, expected):
     )]
 )
 def test_canonicalize_text_entries(df, expected):
-    pd.testing.assert_frame_equal(canonicalize_text_entries(df), expected)
+    assert_frame_equal(canonicalize_text_entries(df), expected)
 
 def test_canonicalize_text_entries_does_not_mutate():
     df = pd.DataFrame({
@@ -339,7 +449,57 @@ def test_canonicalize_text_entries_does_not_mutate():
     
     canonicalize_text_entries(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
+
+# drop_nonalphabetical_rows
+@pytest.mark.parametrize(
+    "df, expected",
+    [(
+        pd.DataFrame({
+            TITLE_COL: ["Hello word"],
+            TEXT_COL: ["Hello world"],
+            LABEL_COL: [0]
+        }), pd.DataFrame({
+            TITLE_COL: ["Hello word"],
+            TEXT_COL: ["Hello world"],
+            LABEL_COL: [0]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: ["Title", "1"],
+            TEXT_COL: ["Text", "Hello world"],
+            LABEL_COL: [0, 0]
+        }), pd.DataFrame({
+            TITLE_COL: ["Title", "1"],
+            TEXT_COL: ["Text", "Hello world"],
+            LABEL_COL: [0, 0]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: ["Hello world", "Title"],
+            TEXT_COL: ["Text", "20"],
+            LABEL_COL: [0, 0]
+        }), pd.DataFrame({
+            TITLE_COL: ["Hello world"],
+            TEXT_COL: ["Text"],
+            LABEL_COL: [0]
+        })
+    )]
+)
+def test_drop_nonalphabetical_rows(df, expected):
+    assert_frame_equal(drop_nonalphabetical_rows(df), expected)
+
+def test_drop_nonalphabetical_rows_does_not_mutate():
+    df = pd.DataFrame({
+        TITLE_COL: ["Hello world", "Title"],
+        TEXT_COL: ["Text", "20"],
+        LABEL_COL: [0, 0]
+    })
+    original = df.copy()
+    
+    drop_nonalphabetical_rows(df)
+    
+    assert_frame_equal(df, original)
 
 # drop_nonenglish_rows
 @pytest.mark.parametrize(
@@ -381,7 +541,7 @@ def test_canonicalize_text_entries_does_not_mutate():
     )]
 )
 def test_drop_nonenglish_rows(df, expected):
-    pd.testing.assert_frame_equal(drop_nonenglish_rows(df), expected)
+    assert_frame_equal(drop_nonenglish_rows(df), expected)
 
 def test_drop_nonenglish_rows_does_not_mutate():
     df = pd.DataFrame({
@@ -392,7 +552,7 @@ def test_drop_nonenglish_rows_does_not_mutate():
     
     drop_nonenglish_rows(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
 
 # drop_duplicate_rows
 @pytest.mark.parametrize(
@@ -444,7 +604,7 @@ def test_drop_nonenglish_rows_does_not_mutate():
     )]
 )
 def test_drop_duplicate_rows_match_text(df, expected):
-    pd.testing.assert_frame_equal(drop_duplicate_rows(df), expected)
+    assert_frame_equal(drop_duplicate_rows(df), expected)
 
 @pytest.mark.parametrize(
     "df, expected",
@@ -495,7 +655,7 @@ def test_drop_duplicate_rows_match_text(df, expected):
     )]
 )
 def test_drop_duplicate_rows_match_title(df, expected):
-    pd.testing.assert_frame_equal(drop_duplicate_rows(df, True), expected)
+    assert_frame_equal(drop_duplicate_rows(df, True), expected)
 
 def test_drop_duplicate_rows_does_not_mutate():
     df = pd.DataFrame({
@@ -507,7 +667,7 @@ def test_drop_duplicate_rows_does_not_mutate():
     
     drop_duplicate_rows(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
 
 # reindex_rows
 @pytest.mark.parametrize(
@@ -535,7 +695,7 @@ def test_drop_duplicate_rows_does_not_mutate():
     )]
 )
 def test_reindex_rows(df, expected):
-    pd.testing.assert_frame_equal(reindex_rows(df), expected)
+    assert_frame_equal(reindex_rows(df), expected)
 
 def test_reindex_rows_does_not_mutate():
     df = pd.DataFrame({
@@ -546,7 +706,7 @@ def test_reindex_rows_does_not_mutate():
     
     reindex_rows(df)
     
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)
 
 # clean_raw_dataframe
 @pytest.mark.parametrize(
@@ -582,7 +742,7 @@ def test_clean_raw_dataframe(match_title_for_duplicates, expected):
 
     expected = expected.copy()
     expected.index = range(len(expected))
-    pd.testing.assert_frame_equal(clean_raw_dataframe(df, match_title_for_duplicates = match_title_for_duplicates), expected)
+    assert_frame_equal(clean_raw_dataframe(df, match_title_for_duplicates = match_title_for_duplicates), expected)
 
 def test_clean_raw_dataframe_does_not_mutate_input():
     df = pd.DataFrame({
@@ -594,4 +754,4 @@ def test_clean_raw_dataframe_does_not_mutate_input():
 
     clean_raw_dataframe(df)
 
-    pd.testing.assert_frame_equal(df, original)
+    assert_frame_equal(df, original)

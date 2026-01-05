@@ -1,7 +1,28 @@
+import math
 import pandas as pd
 import pycld2 as cld2
 import re
 from .schema import validate_raw_dataframe, LABEL_COL, TITLE_COL, TEXT_COL
+
+def cast_text_columns_to_string(df: pd.DataFrame):
+    """Cast text columns to string dtype while preserving `pd.NA`."""
+    df = df.copy()
+    
+    text_columns = [TITLE_COL, TEXT_COL] if TITLE_COL in df.columns else [TEXT_COL]
+    
+    def to_text(x):
+        if pd.isna(x):
+            return pd.NA
+
+        if isinstance(x, float) and math.isfinite(x) and x.is_integer():
+            return str(int(x))
+
+        return str(x)
+    
+    for column in text_columns:
+        df[column] = df[column].map(to_text).astype("object")
+    
+    return df
 
 def drop_invalid_label_rows(df: pd.DataFrame):
     """Drop rows with labels that are not `0` or `1`."""
@@ -30,6 +51,10 @@ def drop_missing_text_rows(df: pd.DataFrame):
     df.dropna(subset = [TEXT_COL], inplace = True)
 
     return df
+
+def fill_na_with_empty_strings(df: pd.DataFrame):
+    """Fill `pd.NA` values with empty strings."""
+    return df.fillna("")
 
 def remove_ansi_codes(text: str):
     """Replace ANSI escape codes with whitespace."""
@@ -120,9 +145,7 @@ def canonicalize_text_entries(df: pd.DataFrame):
     """Remove any invalid characters and fix whitespace."""
     df = df.copy()
     
-    text_columns = [TEXT_COL]
-    if TITLE_COL in df.columns:
-        text_columns += [TITLE_COL]
+    text_columns = [TITLE_COL, TEXT_COL] if TITLE_COL in df.columns else [TEXT_COL]
     
     for column in text_columns:
         df[column] = df[column].apply(
@@ -137,8 +160,25 @@ def canonicalize_text_entries(df: pd.DataFrame):
     
     return df
 
+def drop_nonalphabetical_rows(df: pd.DataFrame):
+    """Drop rows whose text does not contain letters."""
+    LETTER_RE = re.compile(r"[^\W\d_]", flags = re.UNICODE)
+    df = df.copy()
+    
+    def is_nonalphabetical(text):
+        """Return whether the text does not contain letters."""
+        return LETTER_RE.search(text) is None
+    
+    df.drop(df[df[TEXT_COL].apply(is_nonalphabetical)].index, inplace = True)
+    
+    return df
+
 def drop_nonenglish_rows(df: pd.DataFrame):
-    """Drop rows whose text is not in English."""
+    """Drop rows whose text or title is not in English."""
+    df = df.copy()
+    
+    text_columns = [TITLE_COL, TEXT_COL] if TITLE_COL in df.columns else [TEXT_COL]
+    
     def is_nonenglish(text):
         """Return whether the text is reliably detected to be non-English."""
         result = cld2.detect(str(text))
@@ -147,10 +187,6 @@ def drop_nonenglish_rows(df: pd.DataFrame):
             return False
         
         return result[2][0][1] != "en"
-    
-    df = df.copy()
-    
-    text_columns = [TEXT_COL, TITLE_COL] if TITLE_COL in df.columns else [TEXT_COL]
     
     for column in text_columns:
         df.drop(df[df[column].apply(is_nonenglish)].index, inplace = True)
@@ -191,20 +227,25 @@ def clean_raw_dataframe(
     validate_raw_dataframe(df)
     df = df.copy()
     
+    df = cast_text_columns_to_string(df)
     df = drop_invalid_label_rows(df)
     df = replace_whitespace_entries(df)
     df = drop_missing_text_rows(df)
     
+    df = fill_na_with_empty_strings(df)
     df = canonicalize_text_entries(df)
     df = replace_whitespace_entries(df)
     df = drop_missing_text_rows(df)
     
     if drop_nonenglish:
+        df = fill_na_with_empty_strings(df)
         df = drop_nonenglish_rows(df)
     
     df = drop_duplicate_rows(df, match_title_for_duplicates)
     
     if reindex:
         df = reindex_rows(df)
+    
+    df = fill_na_with_empty_strings(df)
     
     return df
