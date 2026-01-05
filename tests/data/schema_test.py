@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from fake_news.data.schema import (
+from fake_news_classifier.data.schema import (
     CONTENT_COL,
     LABEL_COL,
     TEXT_COL,

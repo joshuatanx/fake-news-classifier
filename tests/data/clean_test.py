@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from pandas.testing import assert_frame_equal
 
-from fake_news.data.clean import (
+from fake_news_classifier.data.clean import (
     canonicalize_text_entries,
     cast_text_columns_to_string,
     clean_raw_dataframe,
@@ -19,7 +19,7 @@ from fake_news.data.clean import (
     remove_control_codes,
     replace_whitespace_entries
 )
-from fake_news.data.schema import (
+from fake_news_classifier.data.schema import (
     LABEL_COL,
     TEXT_COL,
     TITLE_COL
