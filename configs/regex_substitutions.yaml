@@ -1,0 +1,21 @@
+# Missing apostraphe in contractions
+"(?i)(?<!\\w)(couldn|wouldn|shouldn|don|does|didn|isn|aren|wasn|weren|hasn|haven|hadn|won|shan|ain)\\s*t(?!\\w)": "\\1't" # n't (except cant)
+"(?i)(?<!\\w)(can)\\s+t(?!\\w)": "\\1't"  # can't
+
+"(?i)(?<!\\w)(they|you)\\s*re(?!\\w)": "\\1're"  # 're (except were, which is a word)
+"(?i)(?<!\\w)(we)\\s+re(?!\\w)": "\\1're" # we're
+
+"(?i)(?<!\\w)(I|we|they|should|could|would|must|might)\\s*ve(?!\\w)": "\\1've"  # 've
+
+"(?i)(?<!\\w)(you|they|it)\\s*ll(?!\\w)": "\\1'll"  # 'll (except ill, well, hell, shell)
+"(?i)(?<!\\w)(I|we|he|she)\\s+ll(?!\\w)": "\\1'll"  # I'll, we'll, he'll, she'll
+
+"(?i)(?<!\\w)(I|you|they|he|it)\\s*d(?!\\w)": "\\1'd"  # 'd (except wed, shed)
+"(?i)(?<!\\w)(we|she)\\s+d(?!\\w)": "\\1'd" # we'd, she'd
+
+"(?i)(?<!\\w)(he|she|that)\\s*s(?!\\w)": "\\1's" # 's (except its)
+"(?i)(?<!\\w)(it)\\s+s(?!\\w)": "\\1's" # it's
+
+# Extra space in United States of America
+"(?i)(?<!\\w)U\\s*\\.\\s*S\\s*\\.(?!\\w)": "US"
+"(?i)(?<!\\w)U\\s*\\.\\s*S\\s*\\.\\s*A\\s*\\.(?!\\w)": "USA"
