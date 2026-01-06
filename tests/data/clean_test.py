@@ -3,7 +3,9 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 from fake_news_classifier.data.clean import (
+    PARAGRAPH_TOKEN,
     apply_regex_substitutions,
+    canonicalize_text,
     canonicalize_text_entries,
     cast_text_columns_to_string,
     clean_raw_dataframe,
@@ -15,10 +17,12 @@ from fake_news_classifier.data.clean import (
     fill_na_with_empty_strings,
     fix_missing_spaces_around_punctuation,
     normalize_whitespace,
+    protect_paragraphs,
     reindex_rows,
     remove_ansi_codes,
     remove_control_codes,
-    replace_whitespace_entries
+    replace_whitespace_entries,
+    unprotect_paragraphs
 )
 from fake_news_classifier.data.schema import (
     LABEL_COL,
@@ -293,6 +297,25 @@ def test_fill_na_with_empty_strings_does_not_mutate():
     
     assert_frame_equal(df, original)
 
+# protect_paragraphs
+@pytest.mark.parametrize(
+    "text, n_newlines, expected",
+    [
+        ("AB", 1, "AB"),
+        ("A\nB", 1, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\r\nB", 1, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\n\nB", 2, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\n \nB", 2, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\r\n\r\nB", 2, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\r\n \t\r\nB", 2, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\n\n\nB", 2, f"A{PARAGRAPH_TOKEN}B"),
+        ("A\n\nB", 3, "A\n\nB"),
+        ("A\n\n\nB", 3, f"A{PARAGRAPH_TOKEN}B")
+    ]
+)
+def test_protect_paragraphs(text, n_newlines, expected):
+    assert protect_paragraphs(text, n_newlines = n_newlines, paragraph_token = PARAGRAPH_TOKEN) == expected
+
 # remove_ansi_codes
 @pytest.mark.parametrize(
     "text, expected",
@@ -424,6 +447,17 @@ def test_fix_missing_spaces_around_punctuation(text, expected):
 def test_normalize_whitespace(text, expected):
     assert normalize_whitespace(text) == expected
 
+# unprotect_paragraphs
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("ABC", "ABC"),
+        (f"A{PARAGRAPH_TOKEN}B{PARAGRAPH_TOKEN}C", "A\n\nB\n\nC")
+    ]
+)
+def test_unprotect_paragraphs(text, expected):
+    assert unprotect_paragraphs(text, paragraph_token = PARAGRAPH_TOKEN) == expected
+
 # apply_regex_substitutions
 @pytest.mark.parametrize(
     "text, substitutions, expected",
@@ -444,6 +478,34 @@ def test_normalize_whitespace(text, expected):
 def test_apply_regex_substitutions(text, substitutions, expected):
     assert apply_regex_substitutions(text, substitutions) == expected
 
+# canonicalize_text
+@pytest.mark.parametrize(
+    "text,paragraph_newlines,expected",
+    [
+        ("  A\t\n\n\tB  ", 2, "A\n\nB"),
+        ("A\n \nB", 2, "A\n\nB"),
+        ("A\r\n\r\nB", 2, "A\n\nB"),
+        ("A\nB", 1, "A\n\nB"),
+        ("A\nB", 2, "A B")
+    ]
+)
+def test_canonicalize_text_without_regex(text, paragraph_newlines, expected):
+    assert canonicalize_text(text, paragraph_newlines = paragraph_newlines) == expected
+
+def test_canonicalize_text_with_regex():
+    text = "Hello\n\nworld"
+    substitutions = {
+        r"Hello": "Hi",
+        r"world": "Earth",
+    }
+    out = canonicalize_text(
+        text,
+        regex_substitutions = substitutions,
+        paragraph_newlines = 2,
+        paragraph_token = PARAGRAPH_TOKEN,
+    )
+    assert out == "Hi\n\nEarth"
+
 # canonicalize_text_entries
 @pytest.mark.parametrize(
     "df, expected",
@@ -454,7 +516,7 @@ def test_apply_regex_substitutions(text, substitutions, expected):
         }),
         pd.DataFrame({
             TITLE_COL: ["Red Title", "(Reuters) WASHINGTON"],
-            TEXT_COL: ["HelloWorld Next", "The U.S. President said:Hi! What? U.S. leader"]
+            TEXT_COL: ["HelloWorld\n\nNext", "The U.S. President said:Hi! What? U.S. leader"]
         })
     )]
 )
@@ -762,7 +824,7 @@ def test_reindex_rows_does_not_mutate():
         pd.DataFrame({
             LABEL_COL: [1],
             TITLE_COL: ["Title A"],
-            TEXT_COL: ["Hi there"]
+            TEXT_COL: ["Hi\n\nthere"]
         }),
     ),
     (
@@ -770,7 +832,7 @@ def test_reindex_rows_does_not_mutate():
         pd.DataFrame({
             LABEL_COL: [1, 1],
             TITLE_COL: ["Title A", "Title B"],
-            TEXT_COL: ["Hi there", "Hi there"],
+            TEXT_COL: ["Hi\n\nthere", "Hi\n\nthere"],
         }),
     )]
 )
@@ -781,8 +843,8 @@ def test_clean_raw_dataframe(match_title_for_duplicates, expected):
         TEXT_COL: [
             "Valid text but bad label",
             "   \t  \n",                    # whitespace-only -> NA -> drop
-            "\x1b[31mHi   there\x1b[0m",    # ANSI + repeated whitespace -> "Hi there"
-            "Hi there",                     # potential duplicate
+            "\x1b[31mHi\n   there\x1b[0m",    # ANSI + repeated whitespace -> "Hi there"
+            "Hi\n there",                     # potential duplicate
         ]
     }, index = [10, 11, 12, 13])
 

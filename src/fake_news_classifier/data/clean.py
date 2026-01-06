@@ -56,6 +56,12 @@ def fill_na_with_empty_strings(df: pd.DataFrame):
     """Fill `pd.NA` values with empty strings."""
     return df.fillna("")
 
+PARAGRAPH_TOKEN = " __PARAGRAPH__ "
+def protect_paragraphs(text: str, n_newlines: int = 1, paragraph_token: str = PARAGRAPH_TOKEN):
+    """Find all paragraphs separated by at least `n_newlines` newlines and replace the space with `paragraph_token`."""
+    PARA_SPLIT_RE = re.compile(rf"(?:\r?\n\s*){{{n_newlines},}}")
+    return PARA_SPLIT_RE.sub(paragraph_token, text)
+
 def remove_ansi_codes(text: str):
     """Replace ANSI escape codes with whitespace."""
     return re.sub(r"\x1B(?:[@-Z\\-_]|[78]|\[[0-?]*[ -/]*[@-~])", " ", text)
@@ -141,6 +147,10 @@ def normalize_whitespace(text: str):
     """Remove repeated whitespace."""
     return re.sub(r"\s+", " ", text).strip()
 
+def unprotect_paragraphs(text: str, paragraph_token: str = PARAGRAPH_TOKEN):
+    """Replace all instances of `paragraph_token` with \"\\n\\n\"."""
+    return text.replace(paragraph_token, "\n\n")
+
 def apply_regex_substitutions(text: str, substitutions: dict[str, str]):
     """Apply ordered regex substitutions to text."""
     for pattern, replacement in substitutions.items():
@@ -148,31 +158,43 @@ def apply_regex_substitutions(text: str, substitutions: dict[str, str]):
     
     return text
 
-def canonicalize_text_entries(df: pd.DataFrame, regex_substitutions: dict[str, str] | None = None):
-    """Remove any invalid characters and fix whitespace."""
+def canonicalize_text(
+    text: str,
+    regex_substitutions: dict[str, str] | None = None,
+    paragraph_newlines: int = 1,
+    paragraph_token: str = PARAGRAPH_TOKEN
+):
+    """Remove any invalid characters, fix whitespace, and apply RegEx substitutions."""
+    text = protect_paragraphs(text, n_newlines = paragraph_newlines, paragraph_token = paragraph_token)
+    text = remove_ansi_codes(text)
+    text = remove_control_codes(text)
+    text = fix_missing_spaces_around_punctuation(text)
+    text = normalize_whitespace(text)
+    text = unprotect_paragraphs(text, paragraph_token = paragraph_token)
+    
+    if regex_substitutions:
+        text = apply_regex_substitutions(text, substitutions = regex_substitutions)
+        text = fix_missing_spaces_around_punctuation(text)
+        
+        text = protect_paragraphs(text, n_newlines = paragraph_newlines, paragraph_token = paragraph_token)
+        text = normalize_whitespace(text)
+        text = unprotect_paragraphs(text, paragraph_token = paragraph_token)
+    
+    return text
+
+def canonicalize_text_entries(
+    df: pd.DataFrame,
+    regex_substitutions: dict[str, str] | None = None,
+    paragraph_newlines: int = 1,
+    paragraph_token: str = PARAGRAPH_TOKEN
+):
+    """Canonicalize the text entries of a DataFrame."""
     df = df.copy()
     
     text_columns = [TITLE_COL, TEXT_COL] if TITLE_COL in df.columns else [TEXT_COL]
     
     for column in text_columns:
-        df[column] = df[column].apply(
-            remove_ansi_codes
-        ).apply(
-            remove_control_codes
-        ).apply(
-            fix_missing_spaces_around_punctuation
-        ).apply(
-            normalize_whitespace
-        )
-        
-        if regex_substitutions:
-            df[column] = df[column].apply(
-                apply_regex_substitutions, substitutions = regex_substitutions
-            ).apply(
-                fix_missing_spaces_around_punctuation
-            ).apply(
-                normalize_whitespace
-            )
+        df[column] = df[column].apply(canonicalize_text, regex_substitutions = regex_substitutions, paragraph_newlines = paragraph_newlines, paragraph_token = paragraph_token)
     
     return df
 
@@ -236,6 +258,8 @@ def reindex_rows(df: pd.DataFrame):
 def clean_raw_dataframe(
     df: pd.DataFrame,
     regex_substitutions: dict[str, str] | None = None,
+    paragraph_newlines: int = 1,
+    paragraph_token: str = PARAGRAPH_TOKEN,
     match_title_for_duplicates: bool = False,
     drop_nonenglish: bool = True,
     reindex: bool = True
@@ -250,7 +274,7 @@ def clean_raw_dataframe(
     df = drop_missing_text_rows(df)
     
     df = fill_na_with_empty_strings(df)
-    df = canonicalize_text_entries(df, regex_substitutions = regex_substitutions)
+    df = canonicalize_text_entries(df, regex_substitutions = regex_substitutions, paragraph_newlines = paragraph_newlines, paragraph_token = paragraph_token)
     df = replace_whitespace_entries(df)
     df = drop_missing_text_rows(df)
     
