@@ -3,6 +3,7 @@ import pytest
 from pandas.testing import assert_frame_equal
 
 from fake_news_classifier.data.clean import (
+    apply_regex_substitutions,
     canonicalize_text_entries,
     cast_text_columns_to_string,
     clean_raw_dataframe,
@@ -423,22 +424,67 @@ def test_fix_missing_spaces_around_punctuation(text, expected):
 def test_normalize_whitespace(text, expected):
     assert normalize_whitespace(text) == expected
 
+# apply_regex_substitutions
+@pytest.mark.parametrize(
+    "text, substitutions, expected",
+    [(
+        "hello\u00a0world",
+        {r"\u00a0": " "},
+        "hello world"
+    ), (
+        "“quoted” text",
+        {r"[“”]": "\""},
+        "\"quoted\" text"
+    ), (
+        "U.S. election",
+        {r"(?<!\w)U\.S\.(?!\w)": "US"},
+        "US election"
+    )]
+)
+def test_apply_regex_substitutions(text, substitutions, expected):
+    assert apply_regex_substitutions(text, substitutions) == expected
+
 # canonicalize_text_entries
 @pytest.mark.parametrize(
     "df, expected",
     [(
         pd.DataFrame({
             TITLE_COL: ["\x1b[31mRed\tTitle\x1b[0m", "(Reuters)WASHINGTON"],
-            TEXT_COL: ["Hello\x00World\nNext", "The U.S.President said:Hi!What?"]
+            TEXT_COL: ["Hello\x00World\nNext", "The U.S.President said:Hi!What? U.S.leader"]
         }),
         pd.DataFrame({
             TITLE_COL: ["Red Title", "(Reuters) WASHINGTON"],
-            TEXT_COL: ["HelloWorld Next", "The U.S. President said:Hi! What?"]
+            TEXT_COL: ["HelloWorld Next", "The U.S. President said:Hi! What? U.S. leader"]
         })
     )]
 )
-def test_canonicalize_text_entries(df, expected):
+def test_canonicalize_text_entries_without_regex(df, expected):
     assert_frame_equal(canonicalize_text_entries(df), expected)
+
+@pytest.mark.parametrize(
+    "df, regex_substitutions, expected",
+    [(
+        pd.DataFrame({
+            TEXT_COL: [" U.S.election  "]
+        }),
+        {r"(?<!\w)U\.S\.(?!\w)": "US"},
+        pd.DataFrame({
+            TEXT_COL: ["US election"]
+        })
+    ), (
+        pd.DataFrame({
+            TITLE_COL: ["U.S.election"],
+            TEXT_COL: ["In the U.S.election, turnout rose."]
+        }),
+        {r"(?<!\w)U\.S\.(?!\w)": "US"},
+        pd.DataFrame({
+            TITLE_COL: ["US election"],
+            TEXT_COL: ["In the US election, turnout rose."]
+        })
+    )]
+)
+def test_canonicalize_text_entries_with_regex(df, regex_substitutions, expected):
+    assert_frame_equal(canonicalize_text_entries(df, regex_substitutions = regex_substitutions), expected)
 
 def test_canonicalize_text_entries_does_not_mutate():
     df = pd.DataFrame({

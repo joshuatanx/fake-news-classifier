@@ -109,7 +109,7 @@ def fix_missing_spaces_around_punctuation(text: str):
 
     # Split after acronym chains, e.g. U.S.President -> U.S. President
     text = re.sub(
-        r"((?:\b[A-Z]\.){2,})([A-Z][a-z])",
+        r"((?:\b[A-Z]\.){2,})([A-Za-z])",
         r"\1 \2",
         text
     )
@@ -141,7 +141,14 @@ def normalize_whitespace(text: str):
     """Remove repeated whitespace."""
     return re.sub(r"\s+", " ", text).strip()
 
-def canonicalize_text_entries(df: pd.DataFrame):
+def apply_regex_substitutions(text: str, substitutions: dict[str, str]):
+    """Apply ordered regex substitutions to text."""
+    for pattern, replacement in substitutions.items():
+        text = re.sub(pattern, replacement, text)
+    
+    return text
+
+def canonicalize_text_entries(df: pd.DataFrame, regex_substitutions: dict[str, str] | None = None):
     """Remove any invalid characters and fix whitespace."""
     df = df.copy()
     
@@ -157,6 +164,15 @@ def canonicalize_text_entries(df: pd.DataFrame):
         ).apply(
             normalize_whitespace
         )
+        
+        if regex_substitutions:
+            df[column] = df[column].apply(
+                apply_regex_substitutions, substitutions = regex_substitutions
+            ).apply(
+                fix_missing_spaces_around_punctuation
+            ).apply(
+                normalize_whitespace
+            )
     
     return df
 
@@ -219,6 +235,7 @@ def reindex_rows(df: pd.DataFrame):
 
 def clean_raw_dataframe(
     df: pd.DataFrame,
+    regex_substitutions: dict[str, str] | None = None,
     match_title_for_duplicates: bool = False,
     drop_nonenglish: bool = True,
     reindex: bool = True
@@ -233,7 +250,7 @@ def clean_raw_dataframe(
     df = drop_missing_text_rows(df)
     
     df = fill_na_with_empty_strings(df)
-    df = canonicalize_text_entries(df)
+    df = canonicalize_text_entries(df, regex_substitutions = regex_substitutions)
     df = replace_whitespace_entries(df)
     df = drop_missing_text_rows(df)
     
